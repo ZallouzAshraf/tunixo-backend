@@ -1,20 +1,14 @@
-import { IsOptional, IsString, IsEmail, MinLength } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 
 export class UpdateUserDto {
-  @IsOptional()
+  @ApiPropertyOptional({ example: 'Ahmed Ben Ali' })
   @IsString()
+  @IsOptional()
   fullName?: string;
 
-  @IsOptional()
+  @ApiPropertyOptional({ example: '+21612345678' })
   @IsString()
+  @IsOptional()
   phone?: string;
-
-  @IsOptional()
-  @IsEmail()
-  email?: string;
-
-  @IsOptional()
-  @IsString()
-  @MinLength(6, { message: 'Password must be at least 6 characters' })
-  password?: string;
 }
