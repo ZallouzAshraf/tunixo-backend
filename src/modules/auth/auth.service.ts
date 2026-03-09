@@ -3,21 +3,21 @@ import {
   ConflictException,
   UnauthorizedException,
   ForbiddenException,
-} from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
-import * as bcrypt from 'bcrypt';
-import { PrismaService } from '../../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
-import { RegisterDto } from './dto/register.dto';
-import { User, Role } from '@prisma/client';
+} from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import { ConfigService } from "@nestjs/config";
+import * as bcrypt from "bcrypt";
+import { PrismaService } from "../../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
+import { RegisterDto } from "./dto/register.dto";
+import { User, Role } from "../../prisma/prisma.service";
 
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
 }
 
-export type SafeUser = Omit<User, 'password' | 'refreshToken'>;
+export type SafeUser = Omit<User, "password" | "refreshToken">;
 
 @Injectable()
 export class AuthService {
@@ -44,7 +44,7 @@ export class AuthService {
       where: { email: dto.email.toLowerCase() },
     });
     if (existing) {
-      throw new ConflictException('User with this email already exists');
+      throw new ConflictException("User with this email already exists");
     }
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     const user = await this.prisma.user.create({
@@ -53,6 +53,7 @@ export class AuthService {
         password: hashedPassword,
         fullName: dto.fullName,
         phone: dto.phone,
+        role: dto.role || "BUYER",
       },
     });
     const tokens = await this.generateTokens(user.id, user.email, user.role);
@@ -63,9 +64,13 @@ export class AuthService {
     });
     const { password, refreshToken, ...safeUser } = user;
     if (user.role === Role.SELLER) {
-      this.notificationsService.sendWelcomeSeller({ email: user.email, fullName: user.fullName ?? '' }).catch(() => {});
+      this.notificationsService
+        .sendWelcomeSeller({ email: user.email, fullName: user.fullName ?? "" })
+        .catch(() => {});
     } else {
-      this.notificationsService.sendWelcomeBuyer({ email: user.email, fullName: user.fullName ?? '' }).catch(() => {});
+      this.notificationsService
+        .sendWelcomeBuyer({ email: user.email, fullName: user.fullName ?? "" })
+        .catch(() => {});
     }
     return { user: safeUser, ...tokens };
   }
@@ -88,7 +93,7 @@ export class AuthService {
       where: { id: userId },
       data: { refreshToken: null },
     });
-    return { message: 'Logged out successfully' };
+    return { message: "Logged out successfully" };
   }
 
   async refreshTokens(
@@ -99,11 +104,11 @@ export class AuthService {
       where: { id: userId },
     });
     if (!user || !user.refreshToken) {
-      throw new ForbiddenException('Invalid refresh token');
+      throw new ForbiddenException("Invalid refresh token");
     }
     const isMatch = await bcrypt.compare(refreshToken, user.refreshToken);
     if (!isMatch) {
-      throw new ForbiddenException('Invalid refresh token');
+      throw new ForbiddenException("Invalid refresh token");
     }
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     const hashedRefreshToken = await bcrypt.hash(tokens.refreshToken, 10);
@@ -122,12 +127,12 @@ export class AuthService {
     const payload = { sub: userId, email, role };
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('jwt.secret'),
-        expiresIn: this.configService.get<string>('jwt.expiresIn'),
+        secret: this.configService.get<string>("jwt.secret"),
+        expiresIn: this.configService.get<string>("jwt.expiresIn"),
       }),
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('jwt.refreshSecret'),
-        expiresIn: this.configService.get<string>('jwt.refreshExpiresIn'),
+        secret: this.configService.get<string>("jwt.refreshSecret"),
+        expiresIn: this.configService.get<string>("jwt.refreshExpiresIn"),
       }),
     ]);
     return { accessToken, refreshToken };
