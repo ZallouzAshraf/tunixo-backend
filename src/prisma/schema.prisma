@@ -1,102 +1,311 @@
-generator client {
-  provider = "prisma-client-js"
-}
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────
+
 enum Role {
-  USER
-  ADMIN
+  BUYER        // default — buys subscriptions
+  SELLER       // deposits foreign currency
+  ADMIN        // manages platform
 }
 
 enum AccountStatus {
-  AVAILABLE
-  RESERVED
-  USED
+  AVAILABLE    // ready to be delivered
+  RESERVED     // being processed
+  USED         // delivered to buyer
 }
 
 enum OrderStatus {
-  PENDING
-  ACTIVE
-  FAILED
-  EXPIRED
-  REFUNDED
+  PENDING      // payment received, finding account
+  ACTIVE       // delivered and active
+  FAILED       // delivery failed
+  EXPIRED      // subscription expired
+  REFUNDED     // buyer refunded
 }
 
 enum TransactionType {
-  CREDIT
-  DEBIT
+  CREDIT       // money added to wallet
+  DEBIT        // money removed from wallet
+  WITHDRAWAL   // seller withdraws TND
+  COMMISSION   // platform commission
 }
+
+enum DepositStatus {
+  PENDING      // seller submitted, waiting confirmation
+  CONFIRMED    // admin confirmed, TND credited
+  REJECTED     // admin rejected deposit
+  USED         // dollars used to buy subscription
+}
+
+enum WithdrawalStatus {
+  PENDING      // seller requested withdrawal
+  PROCESSING   // admin processing
+  COMPLETED    // TND sent to seller
+  REJECTED     // withdrawal rejected
+}
+
+enum DeliveryType {
+  ACCOUNT    // auto delivery from stock
+  MANUAL     // admin delivers manually
+}
+
+// ─────────────────────────────────────
+// USER
+// ─────────────────────────────────────
 
 model User {
-  id            String        @id @default(cuid())
-  email         String        @unique
-  password      String
-  fullName      String?
-  phone         String?
-  role          Role          @default(USER)
-  walletBalance Float         @default(0)
-  isVerified    Boolean       @default(false)
-  refreshToken  String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  orders        Order[]
-  transactions  Transaction[]
+  id              String    @id @default(cuid())
+  email           String    @unique
+  password        String
+  fullName        String?
+  phone           String?
+  role            Role      @default(BUYER)
+
+  // Wallet — TND balance
+  walletBalance   Float     @default(0)
+
+  // Auth
+  isVerified      Boolean   @default(false)
+  refreshToken    String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  orders          Order[]
+  transactions    Transaction[]
+  deposits        SellerDeposit[]
+  withdrawals     SellerWithdrawal[]
+
+  @@map("users")
 }
+
+// ─────────────────────────────────────
+// SERVICE (subscription catalog)
+// ─────────────────────────────────────
 
 model Service {
-  id          String    @id @default(cuid())
-  name        String
-  slug        String    @unique
-  description String?
-  priceTnd    Float
-  priceUsd    Float
-  category    String?
-  imageUrl    String?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  accounts    Account[]
-  orders      Order[]
+  id              String    @id @default(cuid())
+  name            String
+  slug            String    @unique
+  description     String?
+
+  // Pricing
+  priceTnd        Float     // price buyer pays in TND
+  priceUsd        Float     // actual cost in USD
+
+  category        String?
+  imageUrl        String?
+  isActive        Boolean   @default(true)
+
+  // Delivery type
+  deliveryType    DeliveryType @default(ACCOUNT)
+  // ACCOUNT = deliver stored credentials
+  // MANUAL  = admin delivers manually
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  accounts        Account[]
+  orders          Order[]
+
+  @@map("services")
 }
+
+// ─────────────────────────────────────
+// ACCOUNT (stock of credentials)
+// ─────────────────────────────────────
 
 model Account {
-  id         String        @id @default(cuid())
-  serviceId  String
-  service    Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  credentials Json
-  status     AccountStatus @default(AVAILABLE)
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  order      Order?
+  id              String        @id @default(cuid())
+  serviceId       String
+  service         Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  // Credentials stored as JSON
+  // { email, password } or { licenseKey } etc.
+  credentials     Json
+
+  // Account email (for subscriptions we control)
+  accountEmail    String?
+
+  status          AccountStatus @default(AVAILABLE)
+
+  // Expiry tracking
+  expiresAt       DateTime?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  order           Order?
+
+  @@map("accounts")
 }
+
+// ─────────────────────────────────────
+// ORDER (buyer purchase)
+// ─────────────────────────────────────
 
 model Order {
-  id                 String      @id @default(cuid())
-  userId             String
-  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  serviceId          String
-  service            Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  accountId          String?     @unique
-  account            Account?    @relation(fields: [accountId], references: [id])
-  amountPaid         Float
-  status             OrderStatus @default(PENDING)
-  paymentReference   String?
-  expiresAt          DateTime?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  id                String      @id @default(cuid())
+
+  // Buyer
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Service ordered
+  serviceId         String
+  service           Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  // Delivered account (null until delivery)
+  accountId         String?     @unique
+  account           Account?    @relation(fields: [accountId], references: [id])
+
+  // Matched deposit (which seller funded this)
+  depositId         String?
+  deposit           SellerDeposit? @relation(fields: [depositId], references: [id])
+
+  // Financials
+  amountPaid        Float       // TND paid by buyer
+  platformFee       Float       @default(0) // commission taken
+
+  // Status
+  status            OrderStatus @default(PENDING)
+
+  // Payment reference from Konnect
+  paymentReference  String?
+
+  // Subscription tracking
+  expiresAt         DateTime?
+  renewalReminder   Boolean     @default(false)
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@map("orders")
 }
 
+// ─────────────────────────────────────
+// SELLER DEPOSIT
+// ─────────────────────────────────────
+
+model SellerDeposit {
+  id              String        @id @default(cuid())
+
+  // Seller
+  sellerId        String
+  seller          User          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  // Amount in foreign currency
+  amountUsd       Float         // amount seller deposits in USD
+
+  // Amount in TND credited to seller wallet
+  // = amountUsd * exchangeRate * (1 - sellerCommission)
+  amountTnd       Float
+
+  // Exchange rate used at time of deposit
+  exchangeRate    Float
+
+  // Platform commission on seller side (%)
+  sellerCommission Float        @default(0.05) // 5%
+
+  // Proof of payment (screenshot URL or reference)
+  proofUrl        String?
+  paymentMethod   String?       // "paypal", "fiverr", "wise" etc.
+
+  status          DepositStatus @default(PENDING)
+
+  // Admin who confirmed
+  confirmedBy     String?
+  confirmedAt     DateTime?
+
+  // Admin rejection reason
+  rejectionReason String?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  orders          Order[]       // orders funded by this deposit
+
+  @@map("seller_deposits")
+}
+
+// ─────────────────────────────────────
+// SELLER WITHDRAWAL
+// ─────────────────────────────────────
+
+model SellerWithdrawal {
+  id              String           @id @default(cuid())
+
+  sellerId        String
+  seller          User             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  // Amount requested in TND
+  amountTnd       Float
+
+  // Withdrawal method details
+  method          String           // "d17", "virement", "cash"
+  methodDetails   Json             // { phone, iban, etc. }
+
+  status          WithdrawalStatus @default(PENDING)
+
+  // Admin who processed
+  processedBy     String?
+  processedAt     DateTime?
+
+  rejectionReason String?
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@map("seller_withdrawals")
+}
+
+// ─────────────────────────────────────
+// TRANSACTION (wallet history)
+// ─────────────────────────────────────
+
 model Transaction {
-  id          String          @id @default(cuid())
-  userId      String
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount      Float
-  type        TransactionType
-  reference   String?
-  description String?
-  createdAt   DateTime        @default(now())
+  id              String          @id @default(cuid())
+
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amount          Float           // positive = credit, negative = debit
+  type            TransactionType
+
+  // Reference to related entity
+  reference       String?         // orderId, depositId, withdrawalId
+  description     String?
+
+  // Balance after this transaction
+  balanceAfter    Float
+
+  createdAt       DateTime        @default(now())
+
+  @@map("transactions")
+}
+
+// ─────────────────────────────────────
+// PLATFORM RESERVE
+// ─────────────────────────────────────
+// Tracks platform's own USD reserve
+// used as buffer when no seller deposit available
+
+model PlatformReserve {
+  id              String    @id @default(cuid())
+  amountUsd       Float     // current reserve in USD
+  updatedAt       DateTime  @updatedAt
+
+  @@map("platform_reserve")
 }

@@ -84,4 +84,61 @@ export class NotificationsService {
       `,
     });
   }
+
+  async sendDepositConfirmed(
+    email: string,
+    amountUsd: number,
+    amountTnd: number,
+  ): Promise<void> {
+    await this.transporter.sendMail({
+      from: this.configService.get<string>('MAIL_USER'),
+      to: email,
+      subject: 'Deposit Confirmed - Tunixo',
+      html: `
+        <h1>Deposit Confirmed</h1>
+        <p>Your deposit of <strong>$${amountUsd} USD</strong> has been confirmed.</p>
+        <p>Your wallet has been credited with <strong>${amountTnd} TND</strong>.</p>
+        <p>You can now use your balance or request a withdrawal.</p>
+        <p>Best regards,<br/>The Tunixo Team</p>
+      `,
+    });
+  }
+
+  async sendAdminNewDepositAlert(
+    adminEmail: string,
+    sellerEmail: string,
+    amountUsd: number,
+    paymentMethod: string,
+  ): Promise<void> {
+    await this.transporter.sendMail({
+      from: this.configService.get<string>('MAIL_USER'),
+      to: adminEmail,
+      subject: 'New deposit to review - Tunixo',
+      html: `
+        <h1>New Deposit Pending</h1>
+        <p>Seller <strong>${sellerEmail}</strong> submitted a deposit of <strong>$${amountUsd} USD</strong> via <strong>${paymentMethod}</strong>.</p>
+        <p>Please review and confirm or reject in the admin panel.</p>
+        <p>Best regards,<br/>Tunixo System</p>
+      `,
+    });
+  }
+
+  async sendDepositRejected(
+    email: string,
+    amountUsd: number,
+    rejectionReason: string,
+  ): Promise<void> {
+    await this.transporter.sendMail({
+      from: this.configService.get<string>('MAIL_USER'),
+      to: email,
+      subject: 'Deposit Rejected - Tunixo',
+      html: `
+        <h1>Deposit Rejected</h1>
+        <p>Your deposit of <strong>$${amountUsd} USD</strong> could not be confirmed.</p>
+        <p><strong>Reason:</strong> ${rejectionReason}</p>
+        <p>Please contact support if you have questions.</p>
+        <p>Best regards,<br/>The Tunixo Team</p>
+      `,
+    });
+  }
 }

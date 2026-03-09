@@ -24,21 +24,22 @@ export class WalletService {
     if (amount <= 0) {
       throw new BadRequestException('Amount must be positive');
     }
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
         where: { id: userId },
         data: { walletBalance: { increment: amount } },
-      }),
-      this.prisma.transaction.create({
+      });
+      await tx.transaction.create({
         data: {
           userId,
           amount,
           type: TransactionType.CREDIT,
           reference: reference ?? undefined,
           description: description ?? undefined,
+          balanceAfter: updatedUser.walletBalance,
         },
-      }),
-    ]);
+      });
+    });
   }
 
   async debit(
@@ -57,21 +58,22 @@ export class WalletService {
     if (!user || user.walletBalance < amount) {
       throw new BadRequestException('Insufficient wallet balance');
     }
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
         where: { id: userId },
         data: { walletBalance: { decrement: amount } },
-      }),
-      this.prisma.transaction.create({
+      });
+      await tx.transaction.create({
         data: {
           userId,
-          amount,
+          amount: -amount,
           type: TransactionType.DEBIT,
           reference: reference ?? undefined,
           description: description ?? undefined,
+          balanceAfter: updatedUser.walletBalance,
         },
-      }),
-    ]);
+      });
+    });
   }
 
   async getTransactions(userId: string) {

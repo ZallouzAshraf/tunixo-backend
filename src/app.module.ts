@@ -13,6 +13,7 @@ import { AccountsModule } from './modules/accounts/accounts.module';
 import { WalletModule } from './modules/wallet/wallet.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { DepositsModule } from './modules/deposits/deposits.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AdminModule } from './modules/admin/admin.module';
     WalletModule,
     NotificationsModule,
     AdminModule,
+    DepositsModule,
   ],
 })
 export class AppModule {}
