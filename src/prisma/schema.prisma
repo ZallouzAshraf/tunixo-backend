@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AccountStatus {
+  AVAILABLE
+  RESERVED
+  USED
+}
+
+enum OrderStatus {
+  PENDING
+  ACTIVE
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  password      String
+  fullName      String?
+  phone         String?
+  role          Role          @default(USER)
+  walletBalance Float         @default(0)
+  isVerified    Boolean       @default(false)
+  refreshToken  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  orders        Order[]
+  transactions  Transaction[]
+}
+
+model Service {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  priceTnd    Float
+  priceUsd    Float
+  category    String?
+  imageUrl    String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  accounts    Account[]
+  orders      Order[]
+}
+
+model Account {
+  id         String        @id @default(cuid())
+  serviceId  String
+  service    Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  credentials Json
+  status     AccountStatus @default(AVAILABLE)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  order      Order?
+}
+
+model Order {
+  id                 String      @id @default(cuid())
+  userId             String
+  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceId          String
+  service            Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  accountId          String?     @unique
+  account            Account?    @relation(fields: [accountId], references: [id])
+  amountPaid         Float
+  status             OrderStatus @default(PENDING)
+  paymentReference   String?
+  expiresAt          DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+}
+
+model Transaction {
+  id          String          @id @default(cuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Float
+  type        TransactionType
+  reference   String?
+  description String?
+  createdAt   DateTime        @default(now())
+}
