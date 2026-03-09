@@ -5,38 +5,60 @@ import {
   Body,
   Param,
   UseGuards,
-  Req,
 } from '@nestjs/common';
-import { Request } from 'express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiExcludeEndpoint,
+} from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
+import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 
+@ApiTags('Payments')
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
-  @Post('initiate')
+  @Post('topup')
+  @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard)
-  async initiate(
+  @ApiOperation({ summary: 'Initiate wallet top-up via Konnect' })
+  @ApiResponse({
+    status: 201,
+    description: 'Payment initiated — returns payUrl',
+  })
+  async topup(
     @CurrentUser() user: CurrentUserPayload,
-    @Body('amount') amount: number,
+    @Body() dto: InitiatePaymentDto,
   ) {
-    return this.paymentsService.initiatePayment(user.sub, amount ?? 0);
+    return this.paymentsService.initiateWalletTopup(user.userId, dto);
   }
 
   @Post('webhook')
+  @ApiExcludeEndpoint()
+  @ApiOperation({ summary: 'Konnect webhook — do not call manually' })
   async webhook(@Body() payload: Record<string, unknown>) {
-    await this.paymentsService.handleWebhook(payload as any);
+    try {
+      await this.paymentsService.handleWebhook(payload);
+    } catch {
+      // Always return 200 so Konnect does not retry
+    }
     return { received: true };
   }
 
-  @Get(':id/verify')
+  @Get(':ref/verify')
+  @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Verify payment status' })
+  @ApiResponse({ status: 200, description: 'Payment status' })
   async verify(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('ref') ref: string,
   ) {
-    return this.paymentsService.verifyPayment(id, user.sub);
+    return this.paymentsService.verifyPayment(ref, user.userId);
   }
 }
