@@ -14,6 +14,7 @@ import { WalletModule } from './modules/wallet/wallet.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { DepositsModule } from './modules/deposits/deposits.module';
+import { WithdrawalsModule } from './modules/withdrawals/withdrawals.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { DepositsModule } from './modules/deposits/deposits.module';
     NotificationsModule,
     AdminModule,
     DepositsModule,
+    WithdrawalsModule,
   ],
 })
 export class AppModule {}

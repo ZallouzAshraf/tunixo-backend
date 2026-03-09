@@ -45,7 +45,7 @@ export class DepositsService {
   async create(sellerId: string, dto: CreateDepositDto) {
     const user = await this.prisma.user.findUnique({
       where: { id: sellerId },
-      select: { role: true, email: true },
+      select: { role: true, email: true, fullName: true },
     });
     if (!user || user.role !== Role.SELLER) {
       throw new ForbiddenException('Only sellers can submit deposits');
@@ -67,13 +67,24 @@ export class DepositsService {
       },
     });
 
-    const adminEmail = this.configService.get<string>('ADMIN_EMAIL')
-      ?? this.configService.get<string>('MAIL_USER');
-    if (adminEmail) {
-      await this.notificationsService
-        .sendAdminNewDepositAlert(adminEmail, user.email, dto.amountUsd, dto.paymentMethod)
-        .catch(() => {});
-    }
+    await this.notificationsService
+      .sendDepositReceived({
+        email: user.email,
+        fullName: user.fullName ?? '',
+        amountUsd: dto.amountUsd,
+        amountTnd,
+        depositId: deposit.id,
+      })
+      .catch(() => {});
+    await this.notificationsService
+      .notifyAdminNewDeposit({
+        sellerEmail: user.email,
+        sellerName: user.fullName ?? user.email,
+        amountUsd: dto.amountUsd,
+        depositId: deposit.id,
+        paymentMethod: dto.paymentMethod,
+      })
+      .catch(() => {});
 
     return deposit;
   }
@@ -136,7 +147,7 @@ export class DepositsService {
   async confirmDeposit(id: string, adminId: string, dto: ConfirmDepositDto) {
     const deposit = await this.prisma.sellerDeposit.findUnique({
       where: { id },
-      include: { seller: { select: { id: true, email: true } } },
+      include: { seller: { select: { id: true, email: true, fullName: true } } },
     });
     if (!deposit) {
       throw new NotFoundException('Deposit not found');
@@ -167,8 +178,15 @@ export class DepositsService {
       `Deposit confirmed: $${deposit.amountUsd}`,
     );
 
+    const newBalance = await this.walletService.getBalance(deposit.sellerId);
     await this.notificationsService
-      .sendDepositConfirmed(deposit.seller.email, deposit.amountUsd, amountTnd)
+      .sendDepositConfirmed({
+        email: deposit.seller.email,
+        fullName: deposit.seller.fullName ?? '',
+        amountUsd: deposit.amountUsd,
+        amountTnd,
+        newBalance,
+      })
       .catch(() => {});
 
     return updated;
@@ -177,7 +195,7 @@ export class DepositsService {
   async rejectDeposit(id: string, adminId: string, dto: RejectDepositDto) {
     const deposit = await this.prisma.sellerDeposit.findUnique({
       where: { id },
-      include: { seller: { select: { email: true } } },
+      include: { seller: { select: { email: true, fullName: true } } },
     });
     if (!deposit) {
       throw new NotFoundException('Deposit not found');
@@ -197,7 +215,12 @@ export class DepositsService {
     });
 
     await this.notificationsService
-      .sendDepositRejected(deposit.seller.email, deposit.amountUsd, dto.rejectionReason)
+      .sendDepositRejected({
+        email: deposit.seller.email,
+        fullName: deposit.seller.fullName ?? '',
+        amountUsd: deposit.amountUsd,
+        reason: dto.rejectionReason,
+      })
       .catch(() => {});
 
     return updated;

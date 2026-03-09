@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { RegisterDto } from './dto/register.dto';
 import { User, Role } from '@prisma/client';
 
@@ -24,6 +25,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<User | null> {
@@ -60,6 +62,11 @@ export class AuthService {
       data: { refreshToken: hashedRefreshToken },
     });
     const { password, refreshToken, ...safeUser } = user;
+    if (user.role === Role.SELLER) {
+      this.notificationsService.sendWelcomeSeller({ email: user.email, fullName: user.fullName ?? '' }).catch(() => {});
+    } else {
+      this.notificationsService.sendWelcomeBuyer({ email: user.email, fullName: user.fullName ?? '' }).catch(() => {});
+    }
     return { user: safeUser, ...tokens };
   }
 

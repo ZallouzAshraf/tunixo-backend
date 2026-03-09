@@ -115,12 +115,16 @@ export class AdminService {
       where: { id: orderId },
       data: { accountId: account.id, status: OrderStatus.ACTIVE },
     });
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     await this.notificationsService
-      .sendOrderConfirmation(
-        order.user.email,
-        { ...order, service: order.service },
-        credentials,
-      )
+      .sendOrderDelivered({
+        email: order.user.email,
+        fullName: order.user.fullName ?? '',
+        orderId: order.id,
+        serviceName: order.service.name,
+        credentials: credentials as Record<string, any>,
+        expiresAt,
+      })
       .catch(() => {});
     return this.prisma.order.findUnique({
       where: { id: orderId },

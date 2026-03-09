@@ -100,17 +100,18 @@ export class OrdersService {
           where: { id: account.id },
           data: { status: 'USED' },
         });
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         const activeOrder = await tx.order.update({
           where: { id: order.id },
           data: {
             accountId: account.id,
             status: OrderStatus.ACTIVE,
-            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            expiresAt,
           },
           include: {
             service: true,
             account: true,
-            user: { select: { email: true } },
+            user: { select: { email: true, fullName: true } },
           },
         });
         return { order: activeOrder, autoDelivered: true };
@@ -120,32 +121,45 @@ export class OrdersService {
         where: { id: order.id },
         include: {
           service: true,
-          user: { select: { email: true } },
+          user: { select: { email: true, fullName: true } },
         },
       });
       return { order: pendingOrder!, autoDelivered: false };
     });
 
-    const orderWithAccount = result.order as typeof result.order & { account?: { credentials: unknown } };
+    const orderWithAccount = result.order as typeof result.order & { account?: { credentials: unknown }; expiresAt?: Date };
     if (result.autoDelivered && orderWithAccount.account) {
       await this.notificationsService
-        .sendOrderConfirmation(
-          orderWithAccount.user.email,
-          result.order,
-          orderWithAccount.account.credentials as Record<string, unknown>,
-        )
-        .catch(() => {});
-    } else {
-      await this.prisma.user
-        .findUnique({ where: { id: userId }, select: { email: true } })
-        .then((u) => {
-          if (u)
-            return this.notificationsService.sendOrderPending(
-              u.email,
-              result.order.service.name,
-            );
+        .sendOrderDelivered({
+          email: orderWithAccount.user.email,
+          fullName: orderWithAccount.user.fullName ?? '',
+          orderId: result.order.id,
+          serviceName: result.order.service.name,
+          credentials: orderWithAccount.account.credentials as Record<string, any>,
+          expiresAt: orderWithAccount.expiresAt ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         })
         .catch(() => {});
+    } else {
+      const u = result.order.user as { email: string; fullName?: string | null };
+      if (u) {
+        await this.notificationsService
+          .sendOrderPending({
+            email: u.email,
+            fullName: u.fullName ?? '',
+            orderId: result.order.id,
+            serviceName: result.order.service.name,
+            amountPaid: result.order.amountPaid,
+          })
+          .catch(() => {});
+        await this.notificationsService
+          .notifyAdminPendingOrder({
+            buyerEmail: u.email,
+            serviceName: result.order.service.name,
+            orderId: result.order.id,
+            amountPaid: result.order.amountPaid,
+          })
+          .catch(() => {});
+      }
     }
 
     const { user, ...orderRest } = result.order;
@@ -228,11 +242,14 @@ export class OrdersService {
     });
 
     await this.notificationsService
-      .sendOrderConfirmation(
-        order.user.email,
-        { ...order, service: order.service },
-        dto.credentials,
-      )
+      .sendOrderDelivered({
+        email: order.user.email,
+        fullName: order.user.fullName ?? '',
+        orderId: order.id,
+        serviceName: order.service.name,
+        credentials: dto.credentials as Record<string, any>,
+        expiresAt,
+      })
       .catch(() => {});
 
     return this.prisma.order.findUnique({
@@ -261,11 +278,22 @@ export class OrdersService {
       orderId,
       `Refund: Order ${orderId} cancelled`,
     );
-    return this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id: orderId },
       data: { status: OrderStatus.REFUNDED },
-      include: { service: true },
+      include: { service: true, user: { select: { email: true, fullName: true } } },
     });
+    const newBalance = await this.walletService.getBalance(userId);
+    await this.notificationsService
+      .sendOrderRefunded({
+        email: updatedOrder.user.email,
+        fullName: updatedOrder.user.fullName ?? '',
+        serviceName: updatedOrder.service.name,
+        amountRefunded: order.amountPaid,
+        newBalance,
+      })
+      .catch(() => {});
+    return updatedOrder;
   }
 
   async findAllOrders(filters?: {

@@ -100,11 +100,18 @@ export class PaymentsService {
       );
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { email: true },
+        select: { email: true, fullName: true },
       });
       if (user) {
+        const newBalance = await this.walletService.getBalance(userId);
         await this.notificationsService
-          .sendPaymentConfirmation(user.email, amountTnd)
+          .sendWalletCredited({
+            email: user.email,
+            fullName: user.fullName ?? '',
+            amount: amountTnd,
+            newBalance,
+            reference: paymentRef,
+          })
           .catch(() => {});
       }
     } catch {
