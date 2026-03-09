@@ -2,38 +2,71 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Param,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 
+@ApiTags('Orders')
 @Controller('orders')
-@UseGuards(JwtAuthGuard)
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Place a new order' })
+  @ApiResponse({ status: 201, description: 'Order placed' })
+  @ApiResponse({ status: 400, description: 'Insufficient wallet balance' })
   create(
     @CurrentUser() user: CurrentUserPayload,
     @Body() dto: CreateOrderDto,
   ) {
-    return this.ordersService.create(user.sub, dto);
+    return this.ordersService.create(user.userId, dto);
   }
 
   @Get()
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get my orders' })
   findMyOrders(@CurrentUser() user: CurrentUserPayload) {
-    return this.ordersService.findUserOrders(user.sub);
+    return this.ordersService.findMyOrders(user.userId);
   }
 
   @Get(':id')
-  findOne(
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get order details' })
+  @ApiResponse({ status: 200, description: 'Order details' })
+  @ApiResponse({ status: 403, description: 'Not your order' })
+  findById(
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
   ) {
-    return this.ordersService.findById(id, user.sub);
+    return this.ordersService.findById(id, user.userId);
+  }
+
+  @Delete(':id')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Cancel pending order' })
+  @ApiResponse({ status: 200, description: 'Order cancelled' })
+  @ApiResponse({ status: 400, description: 'Cannot cancel active order' })
+  cancelOrder(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    return this.ordersService.cancelOrder(id, user.userId);
   }
 }
