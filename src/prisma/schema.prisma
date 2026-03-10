@@ -145,9 +145,6 @@ model Account {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  // Relations
-  order           Order?
-
   @@map("accounts")
 }
 
@@ -166,9 +163,8 @@ model Order {
   serviceId         String
   service           Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
-  // Delivered account (null until delivery)
-  accountId         String?     @unique
-  account           Account?    @relation(fields: [accountId], references: [id])
+  // Client's email on the service platform (e.g. Cursor/ChatGPT account)
+  serviceEmail      String?
 
   // Matched deposit (which seller funded this)
   depositId         String?

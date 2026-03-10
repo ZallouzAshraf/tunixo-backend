@@ -1,26 +1,17 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsObject, IsOptional, IsDateString } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsEmail } from 'class-validator';
 
 export class CreateOrderDto {
-  @ApiProperty({ example: 'service-id-here' })
+  @ApiProperty({ example: 'clsid-here' })
   @IsString()
   @IsNotEmpty()
   serviceId!: string;
-}
 
-export class FulfillOrderDto {
   @ApiProperty({
-    example: {
-      email: 'cursor@tunixo.tn',
-      password: 'pass123',
-    },
+    example: 'mycursor@gmail.com',
+    description: "Your account email on the service platform",
   })
-  @IsObject()
+  @IsEmail()
   @IsNotEmpty()
-  credentials!: Record<string, any>;
-
-  @ApiPropertyOptional()
-  @IsDateString()
-  @IsOptional()
-  expiresAt?: string;
+  serviceEmail!: string;
 }

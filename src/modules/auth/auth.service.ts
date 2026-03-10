@@ -10,7 +10,7 @@ import * as bcrypt from "bcrypt";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { RegisterDto } from "./dto/register.dto";
-import { User, Role } from "../../prisma/prisma.service";
+import { User, Role } from "@prisma/client";
 
 export interface TokenPair {
   accessToken: string;

@@ -17,7 +17,6 @@ import {
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { OrdersService } from '../orders/orders.service';
-import { FulfillOrderDto } from '../orders/dto/create-order.dto';
 import {
   PaginationDto,
   UpdateUserRoleDto,
@@ -158,14 +157,13 @@ export class AdminController {
     });
   }
 
-  @Post('orders/:id/fulfill')
-  @ApiOperation({ summary: 'Manually fulfill pending order' })
-  @ApiResponse({ status: 200, description: 'Order fulfilled' })
-  fulfillOrder(
+  @Post('orders/:id/deliver')
+  @ApiOperation({ summary: 'Mark order as delivered — Admin' })
+  @ApiResponse({ status: 200, description: 'Order marked as delivered' })
+  markOrderDelivered(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
-    @Body() dto: FulfillOrderDto,
   ) {
-    return this.ordersService.fulfillOrder(id, user.userId, dto);
+    return this.ordersService.markAsDelivered(id, user.userId);
   }
 }

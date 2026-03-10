@@ -150,18 +150,11 @@ export class NotificationsService {
   async sendOrderDelivered(params: {
     email: string;
     fullName: string;
-    orderId: string;
     serviceName: string;
-    credentials: Record<string, any>;
+    serviceEmail: string;
     expiresAt: Date;
   }): Promise<void> {
     const name = params.fullName || 'there';
-    const credsHtml = Object.entries(params.credentials)
-      .map(
-        ([k, v]) =>
-          `<tr><td style="padding:8px 12px;border:1px solid #2a2a2a;color:#a1a1aa;"><strong>${k}</strong></td><td style="padding:8px 12px;border:1px solid #2a2a2a;color:#f4f4f5;font-family:monospace;">${String(v)}</td></tr>`,
-      )
-      .join('');
     const expiresStr = params.expiresAt
       ? new Date(params.expiresAt).toLocaleDateString('fr-FR', {
           day: 'numeric',
@@ -171,18 +164,19 @@ export class NotificationsService {
       : '—';
     const content = `
       <p>Bonjour ${name},</p>
-      <p>Votre abonnement <strong>${params.serviceName}</strong> est activé !</p>
-      <p><strong>Vos accès :</strong></p>
-      <table style="width:100%;border-collapse:collapse;margin:16px 0;">${credsHtml}</table>
-      <p>Expiration : ${expiresStr}.</p>
-      <p style="color:#f59e0b;">Ne partagez pas ces informations.</p>
+      <p>Bonne nouvelle ! Votre abonnement est actif.</p>
+      <p><strong>Service :</strong> ${params.serviceName}</p>
+      <p><strong>Activé sur :</strong> ${params.serviceEmail}</p>
+      <p><strong>Valide jusqu'au :</strong> ${expiresStr}</p>
+      <p>Connectez-vous directement sur la plateforme avec votre compte habituel.</p>
+      <p style="color:#f59e0b;">Si vous n'avez pas reçu de confirmation de la plateforme, patientez quelques minutes.</p>
       <p style="margin-top:24px;">
-        <a href="${this.configService.get('FRONTEND_URL')}/orders" style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Accéder à mon compte</a>
+        <a href="${this.configService.get('FRONTEND_URL')}/orders" style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Voir mes commandes</a>
       </p>
     `;
     await this.sendMail({
       to: params.email,
-      subject: `Vos accès ${params.serviceName} sont prêts 🚀`,
+      subject: `✅ ${params.serviceName} activé sur votre compte`,
       html: this.getBaseTemplate('Abonnement activé', content),
     });
   }
@@ -448,18 +442,22 @@ export class NotificationsService {
 
   async notifyAdminPendingOrder(params: {
     buyerEmail: string;
+    buyerName?: string;
     serviceName: string;
     orderId: string;
     amountPaid: number;
+    serviceEmail: string;
   }): Promise<void> {
     const adminEmail = this.configService.get<string>('ADMIN_EMAIL');
     if (!adminEmail) return;
     const fulfillUrl = `${this.configService.get('FRONTEND_URL')}/admin/orders`;
+    const buyerLabel = params.buyerName ? `${params.buyerName} (${params.buyerEmail})` : params.buyerEmail;
     const content = `
-      <p>Commande en attente de livraison.</p>
-      <p>Acheteur : ${params.buyerEmail}</p>
-      <p>Service : <strong>${params.serviceName}</strong> — ${params.amountPaid} TND</p>
-      <p>Commande : ${params.orderId}</p>
+      <p>Commande en attente :</p>
+      <p>Client : <strong>${buyerLabel}</strong></p>
+      <p>Service : <strong>${params.serviceName}</strong></p>
+      <p><strong>Email à activer : ${params.serviceEmail}</strong> ← IMPORTANT</p>
+      <p>Montant : ${params.amountPaid} TND</p>
       <p style="margin-top:16px;">
         <a href="${fulfillUrl}" style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Livrer la commande</a>
       </p>
