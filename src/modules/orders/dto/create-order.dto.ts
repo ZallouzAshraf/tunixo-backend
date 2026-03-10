@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsEmail } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsEmail, IsOptional } from 'class-validator';
 
 export class CreateOrderDto {
   @ApiProperty({ example: 'clsid-here' })
@@ -7,11 +7,11 @@ export class CreateOrderDto {
   @IsNotEmpty()
   serviceId!: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'mycursor@gmail.com',
     description: "Your account email on the service platform",
   })
   @IsEmail()
-  @IsNotEmpty()
-  serviceEmail!: string;
+  @IsOptional()
+  serviceEmail?: string;
 }

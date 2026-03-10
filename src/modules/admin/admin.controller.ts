@@ -17,6 +17,8 @@ import {
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { OrdersService } from '../orders/orders.service';
+import { DepositsService } from '../deposits/deposits.service';
+import { WithdrawalsService } from '../withdrawals/withdrawals.service';
 import {
   PaginationDto,
   UpdateUserRoleDto,
@@ -28,6 +30,7 @@ import { AdminGuard } from '../../common/guards/admin.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { Role, OrderStatus } from '@prisma/client';
+import { DepositStatus } from '@prisma/client';
 
 @ApiTags('Admin')
 @ApiBearerAuth('access-token')
@@ -38,6 +41,8 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly ordersService: OrdersService,
+    private readonly depositsService: DepositsService,
+    private readonly withdrawalsService: WithdrawalsService,
   ) {}
 
   @Get('dashboard')
@@ -165,5 +170,37 @@ export class AdminController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.ordersService.markAsDelivered(id, user.userId);
+  }
+
+  @Get('deposits/pending')
+  @ApiOperation({ summary: 'Get pending deposits — Admin' })
+  getPendingDeposits() {
+    return this.depositsService.findAllPending();
+  }
+
+  @Get('deposits')
+  @ApiOperation({ summary: 'Get all deposits with filters — Admin' })
+  getAllDeposits(
+    @Query('status') status?: DepositStatus,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.depositsService.findAll({
+      status,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  @Get('withdrawals/pending')
+  @ApiOperation({ summary: 'Get pending withdrawals — Admin' })
+  getPendingWithdrawals() {
+    return this.withdrawalsService.findAllPending();
+  }
+
+  @Get('withdrawals')
+  @ApiOperation({ summary: 'Get all withdrawals — Admin' })
+  getAllWithdrawals() {
+    return this.withdrawalsService.findAll();
   }
 }

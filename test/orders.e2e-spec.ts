@@ -36,7 +36,7 @@ describe('Orders (e2e)', () => {
         email,
         password: hashedPassword,
         fullName: 'Orders Test User',
-        role: Role.USER,
+        role: Role.BUYER,
         walletBalance: 100,
       },
     });

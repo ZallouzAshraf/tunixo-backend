@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAccountDto, BulkCreateAccountDto } from './dto/create-account.dto';
 import { AccountStatus } from '@prisma/client';
@@ -25,6 +25,7 @@ export class AccountsService {
     return this.prisma.account.create({
       data: {
         serviceId: dto.serviceId,
+        accountEmail: dto.accountEmail ?? undefined,
         credentials: dto.credentials as object,
         status: AccountStatus.AVAILABLE,
       },
@@ -38,14 +39,39 @@ export class AccountsService {
     if (!service) {
       throw new NotFoundException('Service not found');
     }
+    const items = (dto.accounts ?? dto.credentials ?? []) as object[];
+    if (!items.length) {
+      throw new BadRequestException('At least one account (credentials or accounts) is required');
+    }
     const result = await this.prisma.account.createMany({
-      data: dto.credentials.map((credentials) => ({
+      data: items.map((credentials) => ({
         serviceId: dto.serviceId,
-        credentials: credentials as object,
+        credentials,
         status: AccountStatus.AVAILABLE,
       })),
     });
     return { created: result.count };
+  }
+
+  async findAll() {
+    return this.prisma.account.findMany({
+      include: { service: { select: { id: true, name: true, slug: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async delete(id: string) {
+    const account = await this.prisma.account.findUnique({
+      where: { id },
+    });
+    if (!account) {
+      throw new NotFoundException('Account not found');
+    }
+    if (account.status !== AccountStatus.AVAILABLE) {
+      throw new BadRequestException('Only AVAILABLE accounts can be deleted');
+    }
+    await this.prisma.account.delete({ where: { id } });
+    return { deleted: true };
   }
 
   async findAvailable(serviceId: string) {

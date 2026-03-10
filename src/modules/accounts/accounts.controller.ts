@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -6,8 +6,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AccountsService } from './accounts.service';
-import { CreateAccountDto } from './dto/create-account.dto';
-import { BulkCreateAccountDto } from './dto/create-account.dto';
+import { CreateAccountDto, BulkCreateAccountDto } from './dto/create-account.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
 
@@ -37,5 +36,20 @@ export class AccountsController {
   @ApiResponse({ status: 200, description: 'Stock levels' })
   getStockLevels() {
     return this.accountsService.getStockLevels();
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Get all accounts — Admin' })
+  @ApiResponse({ status: 200, description: 'All accounts' })
+  findAll() {
+    return this.accountsService.findAll();
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete account (AVAILABLE only)' })
+  @ApiResponse({ status: 200, description: 'Account deleted' })
+  @ApiResponse({ status: 400, description: 'Only AVAILABLE accounts can be deleted' })
+  delete(@Param('id') id: string) {
+    return this.accountsService.delete(id);
   }
 }
