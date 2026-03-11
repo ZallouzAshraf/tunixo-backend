@@ -16,8 +16,12 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new ResponseInterceptor());
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+  const corsOrigins = ["http://localhost:3000", frontendUrl].filter(
+    (o, i, arr) => arr.indexOf(o) === i,
+  );
   app.enableCors({
-    origin: ["http://localhost:3000"],
+    origin: corsOrigins,
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
