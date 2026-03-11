@@ -30,10 +30,16 @@ export class KonnectProvider {
   private readonly walletId: string;
 
   constructor(private configService: ConfigService) {
-    this.apiKey = this.configService.get<string>('KONNECT_API_KEY', '');
-    this.walletId = this.configService.get<string>('KONNECT_WALLET_ID', '');
+    this.apiKey =
+      this.configService.get<string>('konnect.apiKey') ??
+      this.configService.get<string>('KONNECT_API_KEY', '');
+    this.walletId =
+      this.configService.get<string>('konnect.walletId') ??
+      this.configService.get<string>('KONNECT_WALLET_ID', '');
+    const baseUrl =
+      this.configService.get<string>('konnect.baseUrl') ?? KONNECT_BASE_URL;
     this.client = axios.create({
-      baseURL: KONNECT_BASE_URL,
+      baseURL: baseUrl,
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': this.apiKey,
@@ -45,7 +51,7 @@ export class KonnectProvider {
     const amountInMillimes = Math.round(params.amount * 1000);
     try {
       const response = await this.client.post<Record<string, unknown>>(
-        '/payments/init',
+        '/payments/init-payment',
         {
           receiverWalletId: this.walletId,
           token: 'TND',
@@ -73,12 +79,23 @@ export class KonnectProvider {
         (data['id'] as string) ??
         '';
       const payUrl =
-        (data['pay_url'] as string) ?? (data['payUrl'] as string) ?? (data['url'] as string) ?? '';
+        (data['payUrl'] as string) ??
+        (data['pay_url'] as string) ??
+        (data['url'] as string) ??
+        (data['link'] as string) ??
+        '';
       return { paymentRef, payUrl };
     } catch (err) {
-      const axiosErr = err as AxiosError<{ message?: string }>;
-      const msg =
-        axiosErr.response?.data?.message ?? 'Konnect payment initiation failed';
+      const axiosErr = err as AxiosError<{ message?: string; error?: string }>;
+      const body = axiosErr.response?.data as Record<string, unknown> | undefined;
+      let msg = 'Konnect payment initiation failed';
+      if (body && typeof body === 'object') {
+        if (typeof body.message === 'string') msg = body.message;
+        else if (typeof body.error === 'string') msg = body.error;
+      }
+      if (axiosErr.response?.status === 401) {
+        msg = 'Invalid Konnect API key';
+      }
       throw new ServiceUnavailableException(msg);
     }
   }

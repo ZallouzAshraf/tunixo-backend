@@ -1,19 +1,19 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsString,
   IsNotEmpty,
   IsOptional,
   IsNumber,
   Min,
-} from 'class-validator';
+} from "class-validator";
 
 export class CreateServiceDto {
-  @ApiProperty({ example: 'Cursor Pro' })
+  @ApiProperty({ example: "Cursor Pro" })
   @IsString()
   @IsNotEmpty()
   name!: string;
 
-  @ApiPropertyOptional({ example: 'AI code editor' })
+  @ApiPropertyOptional({ example: "AI code editor" })
   @IsString()
   @IsOptional()
   description?: string;
@@ -28,12 +28,12 @@ export class CreateServiceDto {
   @Min(0)
   priceUsd!: number;
 
-  @ApiPropertyOptional({ example: 'AI Tools' })
+  @ApiPropertyOptional({ example: "AI Tools" })
   @IsString()
   @IsOptional()
   category?: string;
 
-  @ApiPropertyOptional({ example: 'https://cursor.sh/logo.png' })
+  @ApiPropertyOptional({ example: "https://cursor.sh/logo.svg" })
   @IsString()
   @IsOptional()
   imageUrl?: string;

@@ -5,6 +5,8 @@ import {
   Body,
   Param,
   UseGuards,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -39,14 +41,12 @@ export class PaymentsController {
   }
 
   @Post('webhook')
+  @HttpCode(HttpStatus.OK)
   @ApiExcludeEndpoint()
   @ApiOperation({ summary: 'Konnect webhook — do not call manually' })
   async webhook(@Body() payload: Record<string, unknown>) {
-    try {
-      await this.paymentsService.handleWebhook(payload);
-    } catch {
-      // Always return 200 so Konnect does not retry
-    }
+    // Return 200 immediately; process async so Konnect does not retry
+    this.paymentsService.handleWebhook(payload).catch(() => {});
     return { received: true };
   }
 
