@@ -54,15 +54,12 @@ export class AuthController {
   }
 
   @Post('refresh')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Refresh access token' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token (no Bearer required)' })
   @ApiResponse({ status: 200, description: 'Tokens refreshed' })
-  @ApiResponse({ status: 403, description: 'Invalid refresh token' })
-  async refresh(
-    @CurrentUser() user: CurrentUserPayload,
-    @Body('refreshToken') refreshToken: string,
-  ) {
-    return this.authService.refreshTokens(user.userId, refreshToken);
+  @ApiResponse({ status: 403, description: 'Invalid or expired refresh token' })
+  async refresh(@Body('refreshToken') refreshToken: string) {
+    const userId = this.authService.getUserIdFromRefreshToken(refreshToken);
+    return this.authService.refreshTokens(userId, refreshToken);
   }
 }

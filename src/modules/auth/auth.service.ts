@@ -96,6 +96,21 @@ export class AuthService {
     return { message: "Logged out successfully" };
   }
 
+  /** Verify refresh token JWT and return userId (for public refresh endpoint). */
+  getUserIdFromRefreshToken(refreshToken: string): string {
+    if (!refreshToken || typeof refreshToken !== "string") {
+      throw new ForbiddenException("Invalid refresh token");
+    }
+    try {
+      const payload = this.jwtService.verify<{ sub: string }>(refreshToken, {
+        secret: this.configService.get<string>("jwt.refreshSecret"),
+      });
+      return payload.sub;
+    } catch {
+      throw new ForbiddenException("Invalid or expired refresh token");
+    }
+  }
+
   async refreshTokens(
     userId: string,
     refreshToken: string,
