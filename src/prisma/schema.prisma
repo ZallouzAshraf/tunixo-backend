@@ -1,307 +1,163 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
-
-// ─────────────────────────────────────
-// ENUMS
-// ─────────────────────────────────────
 
 enum Role {
-  BUYER        // default — buys subscriptions
-  SELLER       // deposits foreign currency
-  ADMIN        // manages platform
-}
-
-enum AccountStatus {
-  AVAILABLE    // ready to be delivered
-  RESERVED     // being processed
-  USED         // delivered to buyer
+  BUYER
+  ADMIN
 }
 
 enum OrderStatus {
-  PENDING      // payment received, finding account
-  ACTIVE       // delivered and active
+  PENDING      // payment received, processing
+  PROCESSING   // top-up in progress
+  COMPLETED    // delivered successfully
   FAILED       // delivery failed
-  EXPIRED      // subscription expired
   REFUNDED     // buyer refunded
 }
 
 enum TransactionType {
-  CREDIT       // money added to wallet
-  DEBIT        // money removed from wallet
-  WITHDRAWAL   // seller withdraws TND
-  COMMISSION   // platform commission
+  CREDIT
+  DEBIT
 }
 
-enum DepositStatus {
-  PENDING      // seller submitted, waiting confirmation
-  CONFIRMED    // admin confirmed, TND credited
-  REJECTED     // admin rejected deposit
-  USED         // dollars used to buy subscription
+enum ServiceType {
+  TOPUP        // game top-up via API (Free Fire, PUBG)
+  GIFTCARD     // gift card code from stock
 }
 
-enum WithdrawalStatus {
-  PENDING      // seller requested withdrawal
-  PROCESSING   // admin processing
-  COMPLETED    // TND sent to seller
-  REJECTED     // withdrawal rejected
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
 }
 
-enum DeliveryType {
-  ACCOUNT    // auto delivery from stock
-  MANUAL     // admin delivers manually
+enum CodeStatus {
+  AVAILABLE
+  USED
 }
 
-// ─────────────────────────────────────
-// USER
-// ─────────────────────────────────────
-
+// User
 model User {
-  id              String    @id @default(cuid())
-  email           String    @unique
-  password        String
-  fullName        String?
-  phone           String?
-  role            Role      @default(BUYER)
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  fullName      String?
+  phone         String?
+  role          Role      @default(BUYER)
+  walletBalance Float     @default(0)
+  isVerified    Boolean   @default(false)
+  refreshToken  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  // Wallet — TND balance
-  walletBalance   Float     @default(0)
-
-  // Auth
-  isVerified      Boolean   @default(false)
-  refreshToken    String?
-
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  // Relations
-  orders          Order[]
-  transactions    Transaction[]
-  deposits        SellerDeposit[]
-  withdrawals     SellerWithdrawal[]
+  orders        Order[]
+  transactions  Transaction[]
 
   @@map("users")
 }
 
-// ─────────────────────────────────────
-// SERVICE (subscription catalog)
-// ─────────────────────────────────────
+// Game / Service catalog
+model Product {
+  id            String        @id @default(cuid())
+  name          String        // "Free Fire 100 Diamonds"
+  slug          String        @unique
+  description   String?
+  imageUrl      String?
+  category      String        // "free-fire", "pubg", "google-play", "playstation"
 
-model Service {
-  id              String    @id @default(cuid())
-  name            String
-  slug            String    @unique
-  description     String?
+  serviceType   ServiceType   // TOPUP or GIFTCARD
+
+  // For TOPUP — game specific
+  gameId        String?       // Smile.one game ID
+  productId     String?       // Smile.one product ID
 
   // Pricing
-  priceTnd        Float     // price buyer pays in TND
-  priceUsd        Float     // actual cost in USD
+  priceTnd      Float         // price buyer pays
+  costUsd       Float         // our cost in USD
 
-  category        String?
-  imageUrl        String?
-  isActive        Boolean   @default(true)
+  status        ProductStatus @default(ACTIVE)
+  sortOrder     Int           @default(0)
 
-  // Delivery type
-  deliveryType    DeliveryType @default(ACCOUNT)
-  // ACCOUNT = deliver stored credentials
-  // MANUAL  = admin delivers manually
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  orders        Order[]
+  codes         GiftCode[]    // only for GIFTCARD type
 
-  // Relations
-  accounts        Account[]
-  orders          Order[]
-
-  @@map("services")
+  @@map("products")
 }
 
-// ─────────────────────────────────────
-// ACCOUNT (stock of credentials)
-// ─────────────────────────────────────
+// Gift card codes stock (Google Play, PS Store)
+model GiftCode {
+  id            String      @id @default(cuid())
+  productId     String
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-model Account {
-  id              String        @id @default(cuid())
-  serviceId       String
-  service         Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  code          String      @unique  // the actual code
+  status        CodeStatus  @default(AVAILABLE)
 
-  // Credentials stored as JSON
-  // { email, password } or { licenseKey } etc.
-  credentials     Json
+  usedAt        DateTime?
+  orderId       String?     // which order used this code
 
-  // Account email (for subscriptions we control)
-  accountEmail    String?
+  createdAt     DateTime    @default(now())
 
-  status          AccountStatus @default(AVAILABLE)
-
-  // Expiry tracking
-  expiresAt       DateTime?
-
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  @@map("accounts")
+  @@map("gift_codes")
 }
 
-// ─────────────────────────────────────
-// ORDER (buyer purchase)
-// ─────────────────────────────────────
-
+// Order
 model Order {
-  id                String      @id @default(cuid())
+  id              String      @id @default(cuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product     @relation(fields: [productId], references: [id])
 
-  // Buyer
-  userId            String
-  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // For TOPUP — player info
+  playerId        String?     // game player ID
+  zoneId          String?     // server/zone ID (Mobile Legends needs this)
+  playerUsername  String?     // fetched from API after validation
 
-  // Service ordered
-  serviceId         String
-  service           Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-
-  // Client's email on the service platform (e.g. Cursor/ChatGPT account)
-  serviceEmail      String?
-
-  // Matched deposit (which seller funded this)
-  depositId         String?
-  deposit           SellerDeposit? @relation(fields: [depositId], references: [id])
+  // For GIFTCARD — delivered code
+  deliveredCode   String?
 
   // Financials
-  amountPaid        Float       // TND paid by buyer
-  platformFee       Float       @default(0) // commission taken
+  amountPaid      Float       // TND paid
+  platformFee     Float       @default(0)
 
-  // Status
-  status            OrderStatus @default(PENDING)
+  status          OrderStatus @default(PENDING)
 
-  // Payment reference from Konnect
-  paymentReference  String?
+  // API response tracking
+  apiReference    String?     // Smile.one order ID
+  apiResponse     Json?       // full API response
 
-  // Subscription tracking
-  expiresAt         DateTime?
-  renewalReminder   Boolean     @default(false)
+  // Payment
+  paymentReference String?    // Konnect ref
 
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  failureReason   String?
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   @@map("orders")
 }
 
-// ─────────────────────────────────────
-// SELLER DEPOSIT
-// ─────────────────────────────────────
-
-model SellerDeposit {
-  id              String        @id @default(cuid())
-
-  // Seller
-  sellerId        String
-  seller          User          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-
-  // Amount in foreign currency
-  amountUsd       Float         // amount seller deposits in USD
-
-  // Amount in TND credited to seller wallet
-  // = amountUsd * exchangeRate * (1 - sellerCommission)
-  amountTnd       Float
-
-  // Exchange rate used at time of deposit
-  exchangeRate    Float
-
-  // Platform commission on seller side (%)
-  sellerCommission Float        @default(0.05) // 5%
-
-  // Proof of payment (screenshot URL or reference)
-  proofUrl        String?
-  paymentMethod   String?       // "paypal", "fiverr", "wise" etc.
-
-  status          DepositStatus @default(PENDING)
-
-  // Admin who confirmed
-  confirmedBy     String?
-  confirmedAt     DateTime?
-
-  // Admin rejection reason
-  rejectionReason String?
-
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  // Relations
-  orders          Order[]       // orders funded by this deposit
-
-  @@map("seller_deposits")
-}
-
-// ─────────────────────────────────────
-// SELLER WITHDRAWAL
-// ─────────────────────────────────────
-
-model SellerWithdrawal {
-  id              String           @id @default(cuid())
-
-  sellerId        String
-  seller          User             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-
-  // Amount requested in TND
-  amountTnd       Float
-
-  // Withdrawal method details
-  method          String           // "d17", "virement", "cash"
-  methodDetails   Json             // { phone, iban, etc. }
-
-  status          WithdrawalStatus @default(PENDING)
-
-  // Admin who processed
-  processedBy     String?
-  processedAt     DateTime?
-
-  rejectionReason String?
-
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-
-  @@map("seller_withdrawals")
-}
-
-// ─────────────────────────────────────
-// TRANSACTION (wallet history)
-// ─────────────────────────────────────
-
+// Wallet transactions
 model Transaction {
-  id              String          @id @default(cuid())
-
-  userId          String
-  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  amount          Float           // positive = credit, negative = debit
-  type            TransactionType
-
-  // Reference to related entity
-  reference       String?         // orderId, depositId, withdrawalId
-  description     String?
-
-  // Balance after this transaction
-  balanceAfter    Float
-
-  createdAt       DateTime        @default(now())
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount        Float
+  type          TransactionType
+  reference     String?
+  description   String?
+  balanceAfter  Float
+  createdAt     DateTime        @default(now())
 
   @@map("transactions")
-}
-
-// ─────────────────────────────────────
-// PLATFORM RESERVE
-// ─────────────────────────────────────
-// Tracks platform's own USD reserve
-// used as buffer when no seller deposit available
-
-model PlatformReserve {
-  id              String    @id @default(cuid())
-  amountUsd       Float     // current reserve in USD
-  updatedAt       DateTime  @updatedAt
-
-  @@map("platform_reserve")
 }

@@ -4,177 +4,204 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SmileOneService } from '../topup/smile-one.service';
+import { GiftCodesService } from '../giftcodes/giftcodes.service';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { OrderStatus, DepositStatus } from '@prisma/client';
-import { TransactionType } from '@prisma/client';
+import {
+  OrderStatus,
+  ServiceType,
+  ProductStatus,
+  CodeStatus,
+} from '@prisma/client';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
+
+const TOPUP_QUEUE = 'topup';
 
 @Injectable()
 export class OrdersService {
   constructor(
     private prisma: PrismaService,
-    private configService: ConfigService,
     private walletService: WalletService,
     private notificationsService: NotificationsService,
+    private smileOneService: SmileOneService,
+    private giftcodesService: GiftCodesService,
+    @InjectQueue(TOPUP_QUEUE) private topupQueue: Queue,
   ) {}
 
-  async create(
-    userId: string,
-    dto: CreateOrderDto,
-  ): Promise<{ order: any; autoDelivered: boolean }> {
-    const result = await this.prisma.$transaction(async (tx) => {
-      // 1. Get service
-      const service = await tx.service.findUnique({
-        where: { id: dto.serviceId },
-      });
-      if (!service || !service.isActive) {
-        throw new NotFoundException('Service not found');
-      }
-
-      // 2. Get buyer
-      const buyer = await tx.user.findUnique({
-        where: { id: userId },
-      });
-      if (!buyer) {
-        throw new NotFoundException('User not found');
-      }
-      if (buyer.walletBalance < service.priceTnd) {
-        throw new BadRequestException('Insufficient wallet balance');
-      }
-
-      // 3. Debit buyer wallet
-      await tx.user.update({
-        where: { id: userId },
-        data: { walletBalance: { decrement: service.priceTnd } },
-      });
-
-      // 4. Create DEBIT transaction
-      const balanceAfter = buyer.walletBalance - service.priceTnd;
-      await tx.transaction.create({
-        data: {
-          userId,
-          amount: -service.priceTnd,
-          type: TransactionType.DEBIT,
-          description: `Order: ${service.name}`,
-          balanceAfter,
-        },
-      });
-
-      // 5. Find matching seller deposit
-      const deposit = await tx.sellerDeposit.findFirst({
-        where: {
-          status: DepositStatus.CONFIRMED,
-          amountUsd: { gte: service.priceUsd },
-        },
-        orderBy: { confirmedAt: 'asc' },
-      });
-
-      // 6. Calculate platform fee
-      const platformFee =
-        service.priceTnd * Number(process.env.BUYER_COMMISSION || 0.1);
-
-      // 7. Create order with PENDING status — Admin will manually activate and mark as ACTIVE
-      const order = await tx.order.create({
-        data: {
-          userId,
-          serviceId: dto.serviceId,
-          serviceEmail: dto.serviceEmail,
-          amountPaid: service.priceTnd,
-          platformFee,
-          depositId: deposit?.id ?? null,
-          status: OrderStatus.PENDING,
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        },
-        include: { service: true },
-      });
-
-      return { order, autoDelivered: false };
+  async create(userId: string, dto: CreateOrderDto) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: dto.productId },
     });
+    if (!product || product.status !== ProductStatus.ACTIVE) {
+      throw new NotFoundException('Product not found');
+    }
 
-    // Notify admin with serviceEmail
-    const orderWithUser = await this.prisma.order.findUnique({
-      where: { id: result.order.id },
-      include: {
-        service: true,
-        user: { select: { email: true, fullName: true } },
-      },
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
     });
-    if (orderWithUser?.user) {
-      await this.notificationsService
-        .notifyAdminPendingOrder({
-          buyerEmail: orderWithUser.user.email,
-          buyerName: orderWithUser.user.fullName ?? orderWithUser.user.email,
-          serviceName: orderWithUser.service.name,
-          orderId: orderWithUser.id,
-          amountPaid: orderWithUser.amountPaid,
-          serviceEmail: orderWithUser.serviceEmail ?? '',
-        })
-        .catch(() => {});
-      await this.notificationsService
-        .sendOrderPending({
-          email: orderWithUser.user.email,
-          fullName: orderWithUser.user.fullName ?? '',
-          orderId: orderWithUser.id,
-          serviceName: orderWithUser.service.name,
-          amountPaid: orderWithUser.amountPaid,
-        })
-        .catch(() => {});
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.walletBalance < product.priceTnd) {
+      throw new BadRequestException('Insufficient wallet balance');
+    }
+
+    let validation: { valid: boolean; username: string } = { valid: true, username: '' };
+    if (product.serviceType === ServiceType.TOPUP) {
+      if (!dto.playerId?.trim()) {
+        throw new BadRequestException('playerId is required for top-up products');
+      }
+      if (!product.gameId || !product.productId) {
+        throw new BadRequestException('Product is not configured for top-up');
+      }
+      validation = await this.smileOneService.validatePlayer(
+        product.gameId,
+        dto.playerId.trim(),
+        dto.zoneId?.trim(),
+      );
+      if (!validation.valid) {
+        throw new BadRequestException('Invalid player ID. Please check and try again.');
+      }
+    }
+
+    const platformFee = 0;
+    let order: Awaited<ReturnType<typeof this.prisma.order.create>>;
+    let deliveredCode: string | null = null;
+
+    await this.walletService.debit(
+      userId,
+      product.priceTnd,
+      undefined,
+      `Order: ${product.name}`,
+    );
+
+    try {
+      if (product.serviceType === ServiceType.GIFTCARD) {
+        const { order: createdOrder, code: reservedCode } = await this.prisma.$transaction(async (tx) => {
+          const code = await tx.giftCode.findFirst({
+            where: { productId: product.id, status: CodeStatus.AVAILABLE },
+            orderBy: { createdAt: 'asc' },
+          });
+          if (!code) {
+            throw new NotFoundException('No available gift code for this product');
+          }
+          const newOrder = await tx.order.create({
+            data: {
+              userId,
+              productId: product.id,
+              amountPaid: product.priceTnd,
+              platformFee,
+              status: OrderStatus.COMPLETED,
+              deliveredCode: code.code,
+            },
+            include: { product: true, user: true },
+          });
+          await tx.giftCode.update({
+            where: { id: code.id },
+            data: { status: CodeStatus.USED, usedAt: new Date(), orderId: newOrder.id },
+          });
+          return { order: newOrder, code: code.code };
+        });
+        order = createdOrder;
+        deliveredCode = reservedCode;
+        this.notificationsService
+          .sendGiftCardDelivered(
+            user,
+            order,
+            product,
+            deliveredCode,
+          )
+          .catch(() => {});
+      } else {
+        const result = await this.smileOneService.createOrder(
+          product.gameId!,
+          product.productId!,
+          dto.playerId!.trim(),
+          dto.zoneId?.trim(),
+        );
+        order = await this.prisma.order.create({
+          data: {
+            userId,
+            productId: product.id,
+            playerId: dto.playerId!.trim(),
+            zoneId: dto.zoneId?.trim() ?? undefined,
+            playerUsername: validation.username,
+            amountPaid: product.priceTnd,
+            platformFee,
+            status: result.success ? OrderStatus.PROCESSING : OrderStatus.FAILED,
+            apiReference: result.orderId || undefined,
+            apiResponse: result as unknown as object,
+            failureReason: result.success ? undefined : result.message,
+          },
+          include: { product: true, user: true },
+        });
+        if (!result.success) {
+          await this.walletService.credit(
+            userId,
+            product.priceTnd,
+            order.id,
+            `Refund: Order failed - ${result.message}`,
+          );
+          this.notificationsService
+            .sendTopupFailed(user, order, product)
+            .catch(() => {});
+        } else {
+          this.notificationsService
+            .sendTopupPending(user, order, product)
+            .catch(() => {});
+          await this.topupQueue.add(
+            'check-status',
+            { orderId: order.id },
+            { delay: 60 * 1000, attempts: 5, backoff: { type: 'exponential', delay: 30000 } },
+          );
+        }
+      }
+    } catch (err) {
+      await this.walletService.credit(
+        userId,
+        product.priceTnd,
+        undefined,
+        `Refund: Order creation failed`,
+      ).catch(() => {});
+      throw err;
     }
 
     return {
-      order: result.order,
-      autoDelivered: false,
+      order: this.sanitizeOrder(order, deliveredCode),
+      autoDelivered: product.serviceType === ServiceType.GIFTCARD,
     };
   }
 
-  async markAsDelivered(orderId: string, adminId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: { service: true, user: true },
-    });
-    if (!order) {
-      throw new NotFoundException('Order not found');
+  private sanitizeOrder(order: { deliveredCode?: string | null; [k: string]: unknown }, deliveredCode: string | null) {
+    const out = { ...order };
+    if (order.status !== OrderStatus.COMPLETED) {
+      delete (out as Record<string, unknown>).deliveredCode;
+    } else if (deliveredCode) {
+      (out as Record<string, unknown>).deliveredCode = deliveredCode;
     }
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException('Order is not pending');
-    }
-
-    const updatedOrder = await this.prisma.order.update({
-      where: { id: orderId },
-      data: { status: OrderStatus.ACTIVE },
-      include: { service: true, user: true },
-    });
-
-    const expiresAt = updatedOrder.expiresAt ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    await this.notificationsService
-      .sendOrderDelivered({
-        email: updatedOrder.user.email,
-        fullName: updatedOrder.user.fullName ?? '',
-        serviceName: updatedOrder.service.name,
-        serviceEmail: updatedOrder.serviceEmail ?? '',
-        expiresAt,
-      })
-      .catch(() => {});
-
-    return updatedOrder;
+    return out;
   }
 
   async findMyOrders(userId: string) {
     const orders = await this.prisma.order.findMany({
       where: { userId },
-      include: { service: true },
+      include: { product: { select: { id: true, name: true, slug: true, priceTnd: true, category: true, serviceType: true } } },
       orderBy: { createdAt: 'desc' },
     });
-    return orders;
+    return orders.map((o) => ({
+      ...o,
+      deliveredCode: o.status === OrderStatus.COMPLETED ? o.deliveredCode : undefined,
+    }));
   }
 
   async findById(id: string, userId: string) {
     const order = await this.prisma.order.findFirst({
-      where: { id, userId },
-      include: { service: true },
+      where: { id },
+      include: { product: true },
     });
     if (!order) {
       throw new NotFoundException('Order not found');
@@ -182,45 +209,10 @@ export class OrdersService {
     if (order.userId !== userId) {
       throw new ForbiddenException('Not your order');
     }
-    return order;
-  }
-
-  async cancelOrder(orderId: string, userId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: { service: true },
-    });
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-    if (order.userId !== userId) {
-      throw new ForbiddenException('Not your order');
-    }
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException('Cannot cancel active order');
-    }
-    await this.walletService.credit(
-      userId,
-      order.amountPaid,
-      orderId,
-      `Refund: Order ${orderId} cancelled`,
-    );
-    const updatedOrder = await this.prisma.order.update({
-      where: { id: orderId },
-      data: { status: OrderStatus.REFUNDED },
-      include: { service: true, user: { select: { email: true, fullName: true } } },
-    });
-    const newBalance = await this.walletService.getBalance(userId);
-    await this.notificationsService
-      .sendOrderRefunded({
-        email: updatedOrder.user.email,
-        fullName: updatedOrder.user.fullName ?? '',
-        serviceName: updatedOrder.service.name,
-        amountRefunded: order.amountPaid,
-        newBalance,
-      })
-      .catch(() => {});
-    return updatedOrder;
+    return {
+      ...order,
+      deliveredCode: order.status === OrderStatus.COMPLETED ? order.deliveredCode : undefined,
+    };
   }
 
   async findAllOrders(filters?: {
@@ -237,7 +229,7 @@ export class OrdersService {
         where,
         include: {
           user: { select: { id: true, email: true, fullName: true } },
-          service: { select: { id: true, name: true, slug: true, priceTnd: true } },
+          product: { select: { id: true, name: true, slug: true, priceTnd: true, category: true, serviceType: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -254,33 +246,42 @@ export class OrdersService {
     };
   }
 
-  async getOrderStats() {
-    const [
-      totalOrders,
-      activeOrders,
-      pendingOrders,
-      failedOrders,
-      revenueResult,
-      amountResult,
-    ] = await Promise.all([
-      this.prisma.order.count(),
-      this.prisma.order.count({ where: { status: OrderStatus.ACTIVE } }),
-      this.prisma.order.count({ where: { status: OrderStatus.PENDING } }),
-      this.prisma.order.count({ where: { status: OrderStatus.FAILED } }),
-      this.prisma.order.aggregate({
-        _sum: { platformFee: true },
-      }),
-      this.prisma.order.aggregate({
-        _sum: { amountPaid: true },
-      }),
-    ]);
-    return {
-      totalOrders,
-      activeOrders,
-      pendingOrders,
-      failedOrders,
-      totalRevenue: revenueResult._sum.platformFee ?? 0,
-      totalAmountProcessed: amountResult._sum.amountPaid ?? 0,
-    };
+  async retryTopup(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { product: true, user: true },
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    if (order.status !== OrderStatus.FAILED) {
+      throw new BadRequestException('Only failed TOPUP orders can be retried');
+    }
+    if (order.product.serviceType !== ServiceType.TOPUP || !order.product.gameId || !order.product.productId || !order.playerId) {
+      throw new BadRequestException('Order is not a valid TOPUP order');
+    }
+    const result = await this.smileOneService.createOrder(
+      order.product.gameId,
+      order.product.productId,
+      order.playerId,
+      order.zoneId ?? undefined,
+    );
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: result.success ? OrderStatus.PROCESSING : OrderStatus.FAILED,
+        apiReference: result.orderId || undefined,
+        apiResponse: result as unknown as object,
+        failureReason: result.success ? undefined : result.message,
+      },
+    });
+    if (result.success) {
+      await this.topupQueue.add(
+        'check-status',
+        { orderId },
+        { delay: 60 * 1000, attempts: 5, backoff: { type: 'exponential', delay: 30000 } },
+      );
+    }
+    return { success: result.success, message: result.message };
   }
 }

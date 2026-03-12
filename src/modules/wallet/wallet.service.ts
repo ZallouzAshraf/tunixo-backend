@@ -66,7 +66,7 @@ export class WalletService {
       await tx.transaction.create({
         data: {
           userId,
-          amount: -amount,
+          amount,
           type: TransactionType.DEBIT,
           reference: reference ?? undefined,
           description: description ?? undefined,

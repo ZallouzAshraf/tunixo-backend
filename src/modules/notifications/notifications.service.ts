@@ -202,6 +202,105 @@ export class NotificationsService {
     });
   }
 
+  // ─── TOP-UP & GIFT CARD EMAILS ─────────────────
+
+  async sendTopupPending(
+    user: { email: string; fullName: string | null },
+    order: { playerId?: string | null; amountPaid: number },
+    product: { name: string },
+  ): Promise<void> {
+    const name = user.fullName || 'there';
+    const content = `
+      <p>Bonjour ${name},</p>
+      <p>Votre top-up est en cours de traitement.</p>
+      <p><strong>${product.name}</strong> — ${order.amountPaid} TND payés.</p>
+      <p>Player ID : <strong>${order.playerId ?? '—'}</strong></p>
+      <p>Vous recevrez une confirmation dès que le rechargement sera effectué.</p>
+      <p style="margin-top:24px;">
+        <a href="${this.configService.get('FRONTEND_URL')}/orders" style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Voir mes commandes</a>
+      </p>
+    `;
+    await this.sendMail({
+      to: user.email,
+      subject: 'Votre top-up est en cours de traitement ⏳',
+      html: this.getBaseTemplate('Top-up en cours', content),
+    });
+  }
+
+  async sendTopupCompleted(
+    user: { email: string; fullName: string | null },
+    order: { playerId?: string | null; amountPaid: number },
+    product: { name: string },
+  ): Promise<void> {
+    const name = user.fullName || 'there';
+    const content = `
+      <p>Bonjour ${name},</p>
+      <p>Votre top-up a été effectué avec succès ✅</p>
+      <p><strong>${product.name}</strong></p>
+      <p>Player ID : <strong>${order.playerId ?? '—'}</strong></p>
+      <p>Montant : <strong>${order.amountPaid} TND</strong></p>
+      <p>Connectez-vous au jeu pour vérifier votre solde.</p>
+      <p style="margin-top:24px;">
+        <a href="${this.configService.get('FRONTEND_URL')}/orders" style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Voir mes commandes</a>
+      </p>
+    `;
+    await this.sendMail({
+      to: user.email,
+      subject: 'Votre top-up a été effectué avec succès ✅',
+      html: this.getBaseTemplate('Top-up effectué', content),
+    });
+  }
+
+  async sendTopupFailed(
+    user: { email: string; fullName: string | null },
+    order: { failureReason?: string | null; amountPaid: number },
+    product: { name: string },
+  ): Promise<void> {
+    const name = user.fullName || 'there';
+    const reason = order.failureReason || 'Erreur technique';
+    const content = `
+      <p>Bonjour ${name},</p>
+      <p>Votre top-up a échoué ❌</p>
+      <p><strong>${product.name}</strong> — ${order.amountPaid} TND.</p>
+      <p><strong>Motif :</strong> ${reason}</p>
+      <p>Le montant a été automatiquement remboursé sur votre wallet.</p>
+      <p style="margin-top:24px;">
+        <a href="${this.configService.get('FRONTEND_URL')}/orders" style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Voir mes commandes</a>
+      </p>
+    `;
+    await this.sendMail({
+      to: user.email,
+      subject: 'Votre top-up a échoué ❌',
+      html: this.getBaseTemplate('Top-up échoué', content),
+    });
+  }
+
+  async sendGiftCardDelivered(
+    user: { email: string; fullName: string | null },
+    order: { amountPaid: number },
+    product: { name: string },
+    code: string,
+  ): Promise<void> {
+    const name = user.fullName || 'there';
+    const content = `
+      <p>Bonjour ${name},</p>
+      <p>Votre code cadeau est prêt 🎁</p>
+      <p><strong>${product.name}</strong> — ${order.amountPaid} TND.</p>
+      <p style="margin:24px 0;padding:20px;background:#1f2937;border-radius:12px;text-align:center;">
+        <span style="font-size:22px;font-weight:700;letter-spacing:2px;color:#f4f4f5;">${code}</span>
+      </p>
+      <p>Utilisez ce code sur la plateforme concernée (Google Play, PlayStation Store, etc.) pour créditer votre compte.</p>
+      <p style="margin-top:24px;">
+        <a href="${this.configService.get('FRONTEND_URL')}/orders" style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Voir mes commandes</a>
+      </p>
+    `;
+    await this.sendMail({
+      to: user.email,
+      subject: 'Votre code cadeau est prêt 🎁',
+      html: this.getBaseTemplate('Code cadeau livré', content),
+    });
+  }
+
   async sendSubscriptionExpiringSoon(params: {
     email: string;
     fullName: string;

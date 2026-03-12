@@ -3,7 +3,7 @@ import { IsEnum, IsNumber, IsString, IsOptional, Min, Max, IsNotEmpty } from 'cl
 import { Role } from '@prisma/client';
 
 export class UpdateUserRoleDto {
-  @ApiProperty({ enum: ['BUYER', 'SELLER', 'ADMIN'] })
+  @ApiProperty({ enum: ['BUYER', 'ADMIN'] })
   @IsEnum(Role)
   role!: Role;
 }

@@ -63,15 +63,9 @@ export class AuthService {
       data: { refreshToken: hashedRefreshToken },
     });
     const { password, refreshToken, ...safeUser } = user;
-    if (user.role === Role.SELLER) {
-      this.notificationsService
-        .sendWelcomeSeller({ email: user.email, fullName: user.fullName ?? "" })
-        .catch(() => {});
-    } else {
-      this.notificationsService
-        .sendWelcomeBuyer({ email: user.email, fullName: user.fullName ?? "" })
-        .catch(() => {});
-    }
+    this.notificationsService
+      .sendWelcomeBuyer({ email: user.email, fullName: user.fullName ?? "" })
+      .catch(() => {});
     return { user: safeUser, ...tokens };
   }
 

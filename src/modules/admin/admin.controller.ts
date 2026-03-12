@@ -17,20 +17,14 @@ import {
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { OrdersService } from '../orders/orders.service';
-import { DepositsService } from '../deposits/deposits.service';
-import { WithdrawalsService } from '../withdrawals/withdrawals.service';
 import {
   PaginationDto,
   UpdateUserRoleDto,
-  UpdateExchangeRateDto,
-  TopupPlatformReserveDto,
 } from './dto/admin.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { Role, OrderStatus } from '@prisma/client';
-import { DepositStatus } from '@prisma/client';
 
 @ApiTags('Admin')
 @ApiBearerAuth('access-token')
@@ -41,8 +35,6 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly ordersService: OrdersService,
-    private readonly depositsService: DepositsService,
-    private readonly withdrawalsService: WithdrawalsService,
   ) {}
 
   @Get('dashboard')
@@ -53,7 +45,7 @@ export class AdminController {
 
   @Get('users')
   @ApiOperation({ summary: 'Get all users paginated' })
-  @ApiQuery({ name: 'role', required: false, enum: ['BUYER', 'SELLER', 'ADMIN'] })
+  @ApiQuery({ name: 'role', required: false, enum: ['BUYER', 'ADMIN'] })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   getAllUsers(
@@ -98,24 +90,6 @@ export class AdminController {
     return this.adminService.unbanUser(id);
   }
 
-  @Get('reserve')
-  @ApiOperation({ summary: 'Get platform reserve' })
-  getPlatformReserve() {
-    return this.adminService.getPlatformReserve();
-  }
-
-  @Post('reserve/topup')
-  @ApiOperation({ summary: 'Add to platform reserve' })
-  topupPlatformReserve(@Body() dto: TopupPlatformReserveDto) {
-    return this.adminService.topupPlatformReserve(dto);
-  }
-
-  @Patch('exchange-rate')
-  @ApiOperation({ summary: 'Update exchange rate' })
-  updateExchangeRate(@Body() dto: UpdateExchangeRateDto) {
-    return this.adminService.updateExchangeRate(dto);
-  }
-
   @Get('financial')
   @ApiOperation({ summary: 'Get financial summary' })
   getFinancialSummary() {
@@ -141,13 +115,6 @@ export class AdminController {
     return this.adminService.getDashboardStats();
   }
 
-  @Get('orders/stats')
-  @ApiOperation({ summary: 'Get order statistics — Admin' })
-  @ApiResponse({ status: 200, description: 'Order stats' })
-  getOrderStats() {
-    return this.ordersService.getOrderStats();
-  }
-
   @Get('orders')
   @ApiOperation({ summary: 'Get all orders — Admin' })
   getAllOrders(
@@ -162,45 +129,10 @@ export class AdminController {
     });
   }
 
-  @Post('orders/:id/deliver')
-  @ApiOperation({ summary: 'Mark order as delivered — Admin' })
-  @ApiResponse({ status: 200, description: 'Order marked as delivered' })
-  markOrderDelivered(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.ordersService.markAsDelivered(id, user.userId);
-  }
-
-  @Get('deposits/pending')
-  @ApiOperation({ summary: 'Get pending deposits — Admin' })
-  getPendingDeposits() {
-    return this.depositsService.findAllPending();
-  }
-
-  @Get('deposits')
-  @ApiOperation({ summary: 'Get all deposits with filters — Admin' })
-  getAllDeposits(
-    @Query('status') status?: DepositStatus,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.depositsService.findAll({
-      status,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
-    });
-  }
-
-  @Get('withdrawals/pending')
-  @ApiOperation({ summary: 'Get pending withdrawals — Admin' })
-  getPendingWithdrawals() {
-    return this.withdrawalsService.findAllPending();
-  }
-
-  @Get('withdrawals')
-  @ApiOperation({ summary: 'Get all withdrawals — Admin' })
-  getAllWithdrawals() {
-    return this.withdrawalsService.findAll();
+  @Post('orders/:id/retry')
+  @ApiOperation({ summary: 'Retry failed TOPUP order — Admin' })
+  @ApiResponse({ status: 200, description: 'Retry result' })
+  retryOrder(@Param('id') id: string) {
+    return this.ordersService.retryTopup(id);
   }
 }

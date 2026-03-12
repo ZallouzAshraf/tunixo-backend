@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Delete,
   Body,
   Param,
   UseGuards,
@@ -28,7 +27,7 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Place a new order' })
   @ApiResponse({ status: 201, description: 'Order placed' })
-  @ApiResponse({ status: 400, description: 'Insufficient wallet balance' })
+  @ApiResponse({ status: 400, description: 'Insufficient wallet balance or invalid player ID' })
   create(
     @CurrentUser() user: CurrentUserPayload,
     @Body() dto: CreateOrderDto,
@@ -55,18 +54,5 @@ export class OrdersController {
     @Param('id') id: string,
   ) {
     return this.ordersService.findById(id, user.userId);
-  }
-
-  @Delete(':id')
-  @ApiBearerAuth('access-token')
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Cancel pending order' })
-  @ApiResponse({ status: 200, description: 'Order cancelled' })
-  @ApiResponse({ status: 400, description: 'Cannot cancel active order' })
-  cancelOrder(
-    @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
-  ) {
-    return this.ordersService.cancelOrder(id, user.userId);
   }
 }

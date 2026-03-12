@@ -1,17 +1,23 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsEmail, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class CreateOrderDto {
-  @ApiProperty({ example: 'clsid-here' })
+  @ApiProperty({ description: 'Product ID' })
   @IsString()
   @IsNotEmpty()
-  serviceId!: string;
+  productId!: string;
 
   @ApiPropertyOptional({
-    example: 'mycursor@gmail.com',
-    description: "Your account email on the service platform",
+    description: 'Game player ID (required for TOPUP products)',
   })
-  @IsEmail()
+  @IsString()
   @IsOptional()
-  serviceEmail?: string;
+  playerId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Server/zone ID (e.g. for Mobile Legends)',
+  })
+  @IsString()
+  @IsOptional()
+  zoneId?: string;
 }

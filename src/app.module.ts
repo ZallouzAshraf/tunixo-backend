@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bull';
 import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import appConfig from './config/app.config';
@@ -7,15 +8,14 @@ import konnectConfig from './config/konnect.config';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
-import { ServicesModule } from './modules/services/services.module';
+import { ProductsModule } from './modules/products/products.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
-import { AccountsModule } from './modules/accounts/accounts.module';
 import { WalletModule } from './modules/wallet/wallet.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AdminModule } from './modules/admin/admin.module';
-import { DepositsModule } from './modules/deposits/deposits.module';
-import { WithdrawalsModule } from './modules/withdrawals/withdrawals.module';
+import { TopupModule } from './modules/topup/topup.module';
+import { GiftCodesModule } from './modules/giftcodes/giftcodes.module';
 
 @Module({
   imports: [
@@ -23,18 +23,23 @@ import { WithdrawalsModule } from './modules/withdrawals/withdrawals.module';
       isGlobal: true,
       load: [databaseConfig, jwtConfig, appConfig, konnectConfig],
     }),
+    BullModule.forRootAsync({
+      useFactory: (config: ConfigService) => ({
+        redis: config.get<string>('REDIS_URL') ?? 'redis://localhost:6379',
+      }),
+      inject: [ConfigService],
+    }),
     PrismaModule,
     AuthModule,
     UsersModule,
-    ServicesModule,
+    ProductsModule,
     OrdersModule,
     PaymentsModule,
-    AccountsModule,
     WalletModule,
     NotificationsModule,
     AdminModule,
-    DepositsModule,
-    WithdrawalsModule,
+    TopupModule,
+    GiftCodesModule,
   ],
 })
 export class AppModule {}

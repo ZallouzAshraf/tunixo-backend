@@ -27,8 +27,8 @@ export class RegisterDto {
   @IsOptional()
   phone?: string;
 
-  @ApiPropertyOptional({ enum: ["BUYER", "SELLER"] })
-  @IsEnum(["BUYER", "SELLER"])
+  @ApiPropertyOptional({ enum: ["BUYER"] })
+  @IsEnum(["BUYER"])
   @IsOptional()
-  role?: "BUYER" | "SELLER";
+  role?: "BUYER";
 }
